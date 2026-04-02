@@ -13,13 +13,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import load_config, extract_config, get_public_ip
-from links import gen_all_links
+from links import gen_all_links, gen_links_for_user
 
 
 def check_qrencode():
     """检查 qrencode 是否可用"""
     try:
-        subprocess.run(['qrencode', '--version'], capture_output=True, check=True)
+        subprocess.run(['qrencode', '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
@@ -84,6 +84,28 @@ def show_qrcodes(config=None, ip=None):
     for key, name in protocol_names.items():
         if key in links:
             generate_qrcode_terminal(links[key], f"【{name}】")
+
+    print()
+
+
+def show_qrcodes_for_user(config, user, ip=None):
+    if ip is None:
+        ip = get_public_ip()
+
+    if not check_qrencode():
+        print("qrencode not installed")
+        return
+
+    links = gen_links_for_user(config, user, ip)
+
+    print()
+    print("=" * 50)
+    tag = "  QR (user: {}) - VPS: {}".format(user['name'], ip)
+    print(tag)
+    print("=" * 50)
+
+    for key, link in links.items():
+        generate_qrcode_terminal(link, "[{}]".format(key))
 
     print()
 

@@ -37,7 +37,7 @@ def check_cloudflared():
         return True
     # 尝试 PATH 中查找
     try:
-        subprocess.run(['which', 'cloudflared'], capture_output=True, check=True)
+        subprocess.run(['which', 'cloudflared'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
@@ -56,7 +56,7 @@ def install_cloudflared():
 
     result = subprocess.run(
         ['curl', '-L', '-o', CLOUDFLARED_BIN, url],
-        capture_output=True, text=True
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
     )
     if result.returncode != 0:
         raise RuntimeError(f"下载失败: {result.stderr}")
@@ -70,7 +70,7 @@ def get_cloudflared_version():
     try:
         result = subprocess.run(
             [CLOUDFLARED_BIN, '--version'],
-            capture_output=True, text=True, timeout=5
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=5
         )
         # 输出格式: cloudflared version 2026.3.0 (built 2026-03-09-14:08 UTC)
         match = re.search(r'version (\S+)', result.stdout)
@@ -84,7 +84,7 @@ def is_tunnel_running():
     try:
         result = subprocess.run(
             ['pgrep', '-f', 'cloudflared.*tunnel'],
-            capture_output=True, text=True
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
         )
         return bool(result.stdout.strip())
     except Exception:
@@ -99,7 +99,7 @@ def stop_tunnel():
     try:
         result = subprocess.run(
             ['pkill', '-f', 'cloudflared.*tunnel'],
-            capture_output=True, text=True
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
         )
         time.sleep(1)
         # 清理 PID 文件
