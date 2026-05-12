@@ -1,73 +1,67 @@
-# SB-Manager v2.0
+# singbox-py
 
-sing-box 代理服务器管理工具，支持 VLESS-Reality + AnyTLS 双协议。
+Sing-Box 多协议代理管理工具 — 支持 VLESS-Reality + AnyTLS，WARP 分流，SSL 订阅服务。
 
-## 安装
+## 功能
 
-```bash
-# 需要 Python 3.9+ 和 sing-box
-sbm install
-```
+- 🔐 VLESS-Reality / AnyTLS 协议管理
+- 🌐 WARP 分流代理（ChatGPT/OpenAI 直连）
+- 📱 订阅服务（HTTP/HTTPS + Token 认证）
+- 🔗 节点链接 / Clash YAML / 订阅URL 生成
+- 👥 多用户管理（添加/删除/列表/分享）
+- 🛡️ 安全加固（安全配置、自动续约SSL）
 
-## 命令
-
-```bash
-sbm                          # 交互式菜单
-sbm status                   # 查看系统状态
-sbm show [user]              # 显示节点分享链接
-sbm user add <name>          # 添加用户
-sbm user del <name>          # 删除用户
-sbm user list                # 列出所有用户
-sbm restart                  # 重启 sing-box
-sbm stop / sbm start         # 停止/启动
-sbm upgrade                  # 升级 sing-box 内核
-sbm export <user> [dir]      # 导出客户端配置
-sbm sub start [port]         # 启动订阅服务器
-sbm backup                   # 备份配置
-sbm logs [lines]             # 查看日志
-```
-
-## 订阅服务器
+## 快速开始
 
 ```bash
-# 启动（需认证）
-sbm sub start 18888
+# 一键安装
+bash install.sh
 
-# 访问格式（带 token）
-https://rack.snbar.top/auth/sub/<用户名>?token=<token>
-https://rack.snbar.top/auth/sb/<用户名>?token=<token>
+# 管理
+sbm add <name>      # 添加用户
+sbm del <name>      # 删除用户
+sbm list            # 查看用户
+sbm share <name>    # 分享链接
+sbm url <name>      # 订阅URL
 ```
 
-Token 首次启动自动生成，存储在 `/etc/s-box-sn/sub-token`。
+## 环境要求
+
+- Python 3.9+
+- sing-box 1.13+
+- Caddy 2.x (SSL)
+
+## 部署架构
+
+```
+中国设备 → VPS (sing-box VLESS-Reality/AnyTLS) → WARP → 目标网站
+                 ↓
+         Caddy (SSL) → 订阅服务
+```
 
 ## 文件结构
 
 ```
-/etc/s-box-sn/
-├── config.json       # 应用配置
-├── sb.json           # sing-box 运行配置（自动生成）
-├── users.json        # 用户数据
-├── sing-box          # sing-box 二进制
-├── cert.crt          # 自签证书（AnyTLS）
-├── private.key       # 私钥
-├── sub-token         # 订阅认证 token
-└── output/           # 导出目录
-
-/opt/sb-manager/
-├── sbm               # 入口命令
-└── lib/              # 模块库
+/opt/sb-manager/          # 程序目录
+├── sbm                   # 主入口
+├── lib/                  # 功能模块
+│   ├── config.py         # 配置管理
+│   ├── protocols.py      # 协议生成
+│   ├── users.py          # 用户管理
+│   ├── sharing.py        # 分享链接
+│   ├── subscription.py   # 订阅服务
+│   ├── service.py        # 服务管理
+│   ├── system.py         # 系统工具
+│   ├── certs.py          # 证书管理
+│   ├── upgrade.py        # 升级工具
+│   └── ui.py             # 界面显示
+/etc/s-box-sn/            # 配置目录
+├── config.json           # 应用配置
+├── sb.json               # sing-box配置
+├── users.json            # 用户数据
+└── sub-token             # 订阅Token
 ```
 
-## 协议
+## License
 
-| 协议 | 端口 | 说明 |
-|------|------|------|
-| VLESS-Reality | 60379 | 直连，TLS 伪装 |
-| AnyTLS | 42119 | 直连，自签证书 |
-
-## 依赖
-
-- Python 3.9+
-- sing-box 1.13+
-- OpenSSL（自签证书）
-- Caddy（SSL 反向代理，可选）
+MIT
