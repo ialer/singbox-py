@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""sbm - sing-box manager v2.0"""
+import os,sys,json,time
+SD=os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0,SD)
+from lib import ui,system,users,service,certs,subscription,upgrade
+from lib.config import (load_config,save_config,load_sb_config,save_sb_config,
+    generate_reality_keypair,generate_short_id,generate_uuid,load_info)
+from lib.protocols import build_server_config,extract_from_sb_config
+from lib.sharing import gen_all_links,generate_subscription
+VER="2.0.0"
+
+def cmd_status():
+    ui.banner("SB-Manager Status")
+    ui.green("  System")
+    ui.show_info("Host","{} ({})".format(system.get_hostname(),system.get_bbr_status()))
+    ipv4=system.get_ipv4(); ipv6=system.get_ipv6()
+    if ipv4: ui.show_info("IPv4",ipv4)
+    if ipv6: ui.show_info("IPv6",ipv6)
+    print()
+    ui.green("  sing-box")
+    ver=upgrade.get_current_version()
+    ui.show_status("Version",ver or "?",bool(ver))
+    svc=service.status()
+    ui.show_status("Service",svc["status_text"],svc["active"])
+    if svc["pid"]: ui.show_info("PID",svc["pid"])
+    if svc["memory"]: ui.show_info("Memory",svc["memory"])
+    print()
+    ui.green("  Config")
+    config=load_config()
+    ui.show_info("Domain",config.get("domain","?"))
+    ui.show_info("UUID",config.get("uuid","")[:8]+"...")
+    print()
+    ui.green("  Users")
+    au=users.load_users(); ui.show_info("Count",str(len(au)))
+    for u in au: ui.show_info("  "+u["name"],u["uuid"][:8]+"...")
+    print()
+    ui.green("  Protocols")
+    protos=config.get("protocols",{})
+    for k,l in [("vless_reality","VLESS-Reality"),("anytls","AnyTLS")]:
+        p=protos.get(k,{}); en=p.get("enabled",False); pt=p.get("port",0)
+        ui.show_status(l,"Port {}".format(pt) if en else "Disabled",en)
+    print()
+
+def cmd_show(username=None):
+    config=load_config(); au=users.load_users()
+    if not au: ui.red("No users. Add: sbm user add <name>"); return
+    targets=au
+    if username: targets=[u for u in au if u["name"]==username]
+    if not targets: ui.red("User '{}' not found".format(username)); return
+    for user in targets:
+        ui.banner("Nodes - "+user["name"])
+        links=gen_all_links(config,user)
+        for label,link in links:
+            ui.cyan("  --- {} ---".format(label))
+            print("  \033[33m{}\033[0m".format(link)); print()
+    # Show subscription URLs
+    sub_port=config.get("subscription",{}).get("port",0)
+    if sub_port:
+        domain=config.get("domain",config.get("server_ip",""))
+        try:
+            token=subscription.get_token()
+            ui.green("  Subscription (HTTPS, token required)")
+            for user in targets:
+                ui.show_info(user["name"],"https://{}/sub/{}?token={}".format(domain,user["name"],token))
+        except: pass
+    print()
+
+def _rebuild_and_restart(config=None):
+    if config is None: config=load_config()
+    sb=build_server_config(config,{"users":users.load_users()}); save_sb_config(sb)
+    out,rc=system.run("/etc/s-box-sn/sing-box check -c /etc/s-box-sn/sb.json")
+    if rc!=0: ui.red("  Config validation failed: "+out); return False
+    service.restart()
+    if service.is_running(): ui.green("  Service restarted"); return True
+    else: ui.red("  Restart failed"); return False
+
+def cmd_user_add(name):
+    try:
+        u=users.add_user(name); ui.green("  User '{}' added".format(name))
+        ui.show_info("UUID",u["uuid"]); _rebuild_and_restart()
+    except ValueError as e: ui.red("  "+str(e))
+
+def cmd_user_del(name):
+    if not ui.prompt_yn("Delete user '{}'?".format(name),default=False): return
+    try: users.remove_user(name); ui.green("  User '{}' deleted".format(name)); _rebuild_and_restart()
+    except ValueError as e: ui.red("  "+str(e))
+
+def cmd_user_list():
+    au=users.load_users()
+    if not au: ui.yellow("  No users"); return
+    ui.green("  {} users:".format(len(au)))
+    for u in au:
+        t=time.strftime("%Y-%m-%d",time.localtime(u.get("created",0)))
+        ui.show_info(u["name"],"{} ({})".format(u["uuid"],t))
+
+def cmd_export(username,od=None):
+    config=load_config(); user=users.get_user(username)
+    if not user: ui.red("  User '{}' not found".format(username)); return
+    if od is None: od=system.OUTPUT_DIR
+    os.makedirs(od,exist_ok=True); links=gen_all_links(config,user)
+    lp=os.path.join(od,"{}_links.txt".format(username))
+    with open(lp,"w") as f:
+        for l,lk in links: f.write("# {}\n{}\n\n".format(l,lk))
+    st=generate_subscription(links)
+    sp=os.path.join(od,"{}_subscription.txt".format(username))
+    with open(sp,"w") as f: f.write(st)
+    ui.green("  Exported to "+od)
+    ui.show_info("Links",lp); ui.show_info("Sub",sp)
+
+def interactive_menu():
+    while True:
+        ui.banner("SB-Manager v"+VER)
+        svc=service.status(); ver=upgrade.get_current_version() or "?"
+        ui.dim("  sing-box {} | {}".format(ver,"Running" if svc["active"] else "Stopped")); print()
+        c=ui.menu("Main Menu",[
+            ("Status","status"),("Show Nodes","show"),("Install","install"),
+            ("Migrate","migrate"),("Users","users"),("Export","export"),
+            ("Subscription","sub"),("Upgrade sing-box","upgrade"),
+            ("Backup","backup"),("Restart","restart"),("Logs","logs")])
+        if c is None: ui.green("  Bye!"); break
+        if c=="status": cmd_status()
+        elif c=="show": cmd_show()
+        elif c=="install": cmd_install()
+        elif c=="migrate": cmd_migrate()
+        elif c=="users": _menu_users()
+        elif c=="export": _menu_export()
+        elif c=="sub": _menu_sub()
+        elif c=="upgrade": _menu_upgrade()
+        elif c=="backup": ts=system.backup_config("manual"); ui.green("  Backup: "+str(ts))
+        elif c=="restart": service.restart(); time.sleep(1); ui.green("  OK" if service.is_running() else "  Failed")
+        elif c=="logs": print(service.logs(50))
+        ui.prompt("  Enter to continue...")
+
+def _menu_users():
+    while True:
+        c=ui.menu("Users",[("List","list"),("Add","add"),("Delete","del"),("Show Nodes","show")])
+        if c is None: break
+        if c=="list": cmd_user_list()
+        elif c=="add": n=ui.prompt("  Username"); cmd_user_add(n) if n else None
+        elif c=="del": n=ui.prompt("  Username"); cmd_user_del(n) if n else None
+        elif c=="show": n=ui.prompt("  Username (empty=all)"); cmd_show(n if n else None)
+
+def _menu_export():
+    au=users.load_users()
+    if not au: ui.red("  No users"); return
+    opts=[(u["name"],u["name"]) for u in au]+[("All","__all__")]
+    c=ui.menu("Select user",opts)
+    if c is None: return
+    if c=="__all__":
+        for u in au: cmd_export(u["name"])
+    else: cmd_export(c)
+
+def _menu_sub():
+    while True:
+        c=ui.menu("Subscription Server",[("Start","start"),("Stop","stop"),("Show URLs","urls"),("Show Token","token")])
+        if c is None: break
+        if c=="start":
+            config=load_config(); port=ui.prompt_int("  Port",0)
+            actual=subscription.start_server(config,port)
+            ui.green("  Started on port {}".format(actual))
+            token=subscription.get_token()
+            ui.show_info("Token",token)
+            for u in subscription.get_subscription_urls(config,actual): ui.show_info(u["name"],u["sub_url"])
+        elif c=="stop": subscription.stop_server(); ui.green("  Stopped")
+        elif c=="token": ui.show_info("Token",subscription.get_token())
+        elif c=="urls":
+            config=load_config(); port=config.get("subscription",{}).get("port",0)
+            if port:
+                for u in subscription.get_subscription_urls(config,port): ui.show_info(u["name"],u["sub_url"])
+            else: ui.yellow("  Not started")
+
+def _menu_upgrade():
+    current=upgrade.get_current_version(); latest=upgrade.get_latest_version()
+    ui.green("  Current: v{} | Latest: v{}".format(current,latest or "?"))
+    if current==latest: ui.green("  Already latest"); return
+    if ui.prompt_yn("  Upgrade to v{}?".format(latest)):
+        ui.progress("Downloading")
+        try: ver=upgrade.upgrade(latest); ui.done("v"+ver); service.restart(); ui.green("  Done")
+        except Exception as e: ui.fail(str(e))
+
+def cmd_install():
+    ui.banner("SB-Manager Install"); system.ensure_dirs()
+    ui.green("  [1/5] System"); ipv4=system.get_ipv4(); ui.show_info("IPv4",ipv4 or "?")
+    if not ipv4: ui.red("  No public IP"); return
+    print()
+    ui.green("  [2/5] Keys"); config=load_config()
+    if not config.get("private_key"):
+        sk,pk=generate_reality_keypair()
+        config["private_key"]=sk; config["public_key"]=pk
+        config["short_id"]=generate_short_id(); config["uuid"]=generate_uuid()
+        ui.show_info("UUID",config["uuid"])
+    else: ui.dim("  Keys exist, skip")
+    print()
+    ui.green("  [3/5] Certs"); certs.ensure_certs(); ui.done(); print()
+    ui.green("  [4/5] Protocols")
+    config["server_ip"]=ipv4; config["server_ipv6"]=system.get_ipv6()
+    config["hostname"]=system.get_hostname(); config.setdefault("domain","rack.snbar.top")
+    for k in ["vless_reality","anytls"]:
+        p=config["protocols"][k]
+        if p.get("enabled") and not p.get("port"): p["port"]=system.random_available_port()
+        if p.get("enabled"): ui.show_info(k,"Port {}".format(p["port"]))
+    print()
+    ui.green("  [5/5] Users"); au=users.load_users()
+    if not au:
+        n=ui.prompt("  First username","default"); u=users.add_user(n)
+        ui.show_info("User","{} ({}...)".format(n,u["uuid"][:8]))
+    else: ui.dim("  {} users exist".format(len(au)))
+    save_config(config); _rebuild_and_restart(config)
+    print(); ui.green("  Install complete!"); ui.dim("  sbm show to view nodes"); print()
+
+def cmd_migrate():
+    ui.banner("Migrate"); sb=load_sb_config()
+    if not sb: ui.red("  No sb.json"); return
+    ext=extract_from_sb_config(sb); config=load_config()
+    config["uuid"]=ext.get("uuid",config.get("uuid",""))
+    config["private_key"]=ext.get("private_key",""); config["short_id"]=ext.get("short_id","")
+    config["hostname"]=system.get_hostname(); config["server_ip"]=system.get_ipv4() or ""
+    config["server_ipv6"]=system.get_ipv6() or ""; config.setdefault("domain","rack.snbar.top")
+    try: info=load_info(); config["public_key"]=info.get("PUBLIC_KEY",config.get("public_key",""))
+    except: pass
+    if ext.get("vless_port"):
+        config["protocols"]["vless_reality"]["enabled"]=True
+        config["protocols"]["vless_reality"]["port"]=ext["vless_port"]
+        config["protocols"]["vless_reality"]["sni"]=ext.get("sni","apple.com")
+    if ext.get("anytls_port"):
+        config["protocols"]["anytls"]["enabled"]=True
+        config["protocols"]["anytls"]["port"]=ext["anytls_port"]
+    if ext.get("warp_private_key"):
+        config["warp"]["enabled"]=True; config["warp"]["private_key"]=ext["warp_private_key"]
+        config["warp"]["ipv6_address"]=ext.get("warp_ipv6","")
+        config["warp"]["reserved"]=ext.get("warp_reserved",[0,0,0])
+    save_config(config)
+    ui.green("  Migrated! UUID: "+config["uuid"])
+    for k in ["vless_reality","anytls"]:
+        p=config["protocols"][k]; ui.show_status(k,"Port {}".format(p["port"]) if p.get("enabled") else "Off",p.get("enabled",False))
+    print()
+
+def main():
+    if os.geteuid()!=0: ui.red("Run as root"); sys.exit(1)
+    if len(sys.argv)<2: interactive_menu(); return
+    c=sys.argv[1]
+    if c=="status": cmd_status()
+    elif c=="show": cmd_show(sys.argv[2] if len(sys.argv)>2 else None)
+    elif c=="install": cmd_install()
+    elif c=="migrate": cmd_migrate()
+    elif c=="restart": service.restart(); print("OK" if service.is_running() else "Failed")
+    elif c=="stop": service.stop(); print("OK")
+    elif c=="start": service.start(); time.sleep(1); print("OK" if service.is_running() else "Failed")
+    elif c=="upgrade": _menu_upgrade()
+    elif c=="user":
+        if len(sys.argv)<3: print("sbm user <add|del|list> [name]"); return
+        s=sys.argv[2]
+        if s=="add" and len(sys.argv)>3: cmd_user_add(sys.argv[3])
+        elif s=="del" and len(sys.argv)>3: cmd_user_del(sys.argv[3])
+        elif s=="list": cmd_user_list()
+    elif c=="export":
+        if len(sys.argv)<3: print("sbm export <user> [dir]"); return
+        cmd_export(sys.argv[2],sys.argv[3] if len(sys.argv)>3 else None)
+    elif c=="sub":
+        s=sys.argv[2] if len(sys.argv)>2 else "start"
+        if s=="start":
+            config=load_config(); port=int(sys.argv[3]) if len(sys.argv)>3 else 0
+            actual=subscription.start_server(config,port); print("Port: {}".format(actual))
+            print("Token: {}".format(subscription.get_token()))
+            try:
+                while True: time.sleep(1)
+            except KeyboardInterrupt: subscription.stop_server()
+        elif s=="stop": subscription.stop_server(); print("OK")
+    elif c=="backup": ts=system.backup_config("cli"); print("Backup: {}".format(ts))
+    elif c=="logs": print(service.logs(int(sys.argv[2]) if len(sys.argv)>2 else 50))
+    elif c in ("help","-h","--help"): print(__doc__)
+    else: print("Unknown: {}".format(c))
+
+if __name__=="__main__": main()

@@ -1,55 +1,73 @@
-# singbox-py
+# SB-Manager v2.0
 
-sing-box 多协议代理管理工具（Python 版本）— 服务端 + 客户端一体化
+sing-box 代理服务器管理工具，支持 VLESS-Reality + AnyTLS 双协议。
 
-## 功能
+## 安装
 
-- 🔗 节点链接生成（Vless-reality/Vmess-ws/Hysteria2/Tuic5/AnyTLS）
-- 📋 Clash YAML 配置导出
-- 📱 本地订阅生成 + HTTP 订阅服务器
-- 📲 终端二维码显示
-- 🌐 Argo 隧道管理
-- 🔒 WARP 配置（AI 域名分流）
-- 🖥️ sing-box 客户端配置生成
-- 👥 多用户管理系统
+```bash
+# 需要 Python 3.9+ 和 sing-box
+sbm install
+```
+
+## 命令
+
+```bash
+sbm                          # 交互式菜单
+sbm status                   # 查看系统状态
+sbm show [user]              # 显示节点分享链接
+sbm user add <name>          # 添加用户
+sbm user del <name>          # 删除用户
+sbm user list                # 列出所有用户
+sbm restart                  # 重启 sing-box
+sbm stop / sbm start         # 停止/启动
+sbm upgrade                  # 升级 sing-box 内核
+sbm export <user> [dir]      # 导出客户端配置
+sbm sub start [port]         # 启动订阅服务器
+sbm backup                   # 备份配置
+sbm logs [lines]             # 查看日志
+```
+
+## 订阅服务器
+
+```bash
+# 启动（需认证）
+sbm sub start 18888
+
+# 访问格式（带 token）
+https://rack.snbar.top/auth/sub/<用户名>?token=<token>
+https://rack.snbar.top/auth/sb/<用户名>?token=<token>
+```
+
+Token 首次启动自动生成，存储在 `/etc/s-box-sn/sub-token`。
 
 ## 文件结构
 
-| 文件 | 行数 | 功能 |
-|------|------|------|
-| sb.py | 520 | 主入口，交互式菜单 + 命令行参数 |
-| config.py | 315 | 配置加载、解析、公共 IP 检测 |
-| clash.py | 382 | Clash YAML 导出（含 WARP 规则） |
-| links.py | 275 | 节点链接生成（五协议） |
-| client.py | 281 | sing-box 客户端配置生成 |
-| subscribe.py | 129 | 订阅文件生成（Base64） |
-| qrcode.py | 114 | 终端二维码显示 |
-| argo.py | 312 | Cloudflare Argo 隧道管理 |
-| warp.py | 351 | WARP WireGuard 配置 |
-| subserver.py | 140 | HTTP 订阅服务器 |
-| users.py | 275 | 多用户管理（UUID/流量） |
-
-**总计：3094 行 Python**
-
-## 使用
-
-```bash
-python3 sb.py                # 交互式菜单
-python3 sb.py --nodes        # 查看节点信息
-python3 sb.py --clash        # 生成 Clash 配置
-python3 sb.py --client       # 生成 sing-box 客户端配置
-python3 sb.py --sub          # 导出订阅文件
-python3 sb.py --qr           # 生成二维码
-python3 sb.py --users        # 用户管理
-python3 sb.py --status       # 查看服务状态
 ```
+/etc/s-box-sn/
+├── config.json       # 应用配置
+├── sb.json           # sing-box 运行配置（自动生成）
+├── users.json        # 用户数据
+├── sing-box          # sing-box 二进制
+├── cert.crt          # 自签证书（AnyTLS）
+├── private.key       # 私钥
+├── sub-token         # 订阅认证 token
+└── output/           # 导出目录
+
+/opt/sb-manager/
+├── sbm               # 入口命令
+└── lib/              # 模块库
+```
+
+## 协议
+
+| 协议 | 端口 | 说明 |
+|------|------|------|
+| VLESS-Reality | 60379 | 直连，TLS 伪装 |
+| AnyTLS | 42119 | 直连，自签证书 |
 
 ## 依赖
 
-- Python 3.8+
-- qrcode (`pip install qrcode[pil]`)
-- requests
-
-## License
-
-MIT
+- Python 3.9+
+- sing-box 1.13+
+- OpenSSL（自签证书）
+- Caddy（SSL 反向代理，可选）
