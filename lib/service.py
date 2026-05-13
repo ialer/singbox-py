@@ -19,7 +19,8 @@ def status():
             out,_=run(f"ps -o rss= -p {pid}")
             if out:
                 try: mem=f"{int(out.strip())/1024:.1f} MB"
-                except: pass
+                except (ValueError, TypeError):
+                    pass
     return {"active":a,"status_text":"Running" if a else "Stopped","pid":pid,"memory":mem,"uptime":up}
 def logs(n=50):
     out,_=run(f"journalctl -u {SERVICE} -n {n} --no-pager"); return out
