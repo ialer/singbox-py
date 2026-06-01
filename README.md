@@ -10,6 +10,9 @@ Sing-Box 多协议代理管理工具 — 支持 VLESS-Reality + AnyTLS，WARP �
 - 🔗 节点链接 / Clash YAML / 订阅URL 生成
 - 👥 多用户管理（添加/删除/列表/分享）
 - 🛡️ 自动架构检测（amd64/arm64）+ 升级校验
+- 🖥️ Web 管理面板（用户管理/订阅链接/服务状态）
+- 🔄 落地代理 + WARP 故障转移
+- 📊 Clash/Mihomo 配置生成
 
 ## 快速开始
 
@@ -35,6 +38,19 @@ sbm stop / sbm start      # 停止/启动
 # 订阅服务
 sbm sub start [port]      # 启动订阅服务
 sbm sub stop              # 停止订阅服务
+
+# Web 管理面板
+sbm web start [port]      # 启动 Web 管理面板
+sbm web stop              # 停止 Web 管理面板
+
+# 落地代理
+sbm landing on            # 启用落地代理
+sbm landing off           # 禁用落地代理
+sbm landing status        # 查看落地代理状态
+
+# WARP 路由
+sbm warp on               # 启用 WARP 路由
+sbm warp off              # 禁用 WARP 路由
 
 # 其他
 sbm export <user>         # 导出链接到文件
@@ -67,13 +83,16 @@ sbm logs [n]              # 查看日志
 │   ├── config.py         # 配置管理
 │   ├── protocols.py      # 协议生成
 │   ├── users.py          # 用户管理
-│   ├── sharing.py        # 分享链接
-│   ├── subscription.py   # 订阅服务
+│   ├── sharing.py        # 分享链接 + Clash配置
+│   ├── subscription.py   # 订阅服务 + Web面板
 │   ├── service.py        # 服务管理
 │   ├── system.py         # 系统工具
 │   ├── certs.py          # 证书管理
 │   ├── upgrade.py        # 升级工具
-│   └── ui.py             # 界面显示
+│   ├── ui.py             # 界面显示
+│   ├── web.py            # Web管理面板
+│   ├── landing.py        # 落地代理管理
+│   └── warp.py           # WARP路由控制
 /etc/s-box-sn/            # 配置目录
 ├── config.json           # 应用配置
 ├── sb.json               # sing-box配置
@@ -85,8 +104,10 @@ sbm logs [n]              # 查看日志
 
 - 配置文件权限 0o600（仅 root 可读写）
 - 订阅服务需要 Token 认证
+- Web 管理面板需要 Token 认证
 - 升级下载自动校验 SHA256
 - 自签证书包含 SAN 字段（兼容 Chrome 93+）
+- 所有 API 请求经过认证保护
 
 ## License
 
