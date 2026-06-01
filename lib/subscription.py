@@ -19,12 +19,21 @@ class SubHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         p=self.path.strip("/")
         if p=="" or p=="health": self._respond(200,"text/plain","OK"); return
+        # 管理面板页面
+        if p.startswith("admin"):
+            from .web import get_admin_page
+            self._respond(200,"text/html",get_admin_page())
+            return
+        # API 请求处理
+        if p.startswith("api/"):
+            from .web import handle_api_request
+            token=self._extract_token()
+            api_path=p[4:]
+            code,ct,body=handle_api_request(api_path,token)
+            self._respond(code,ct,body)
+            return
         # Extract token from query
-        token=None
-        if "?" in self.path:
-            qs=self.path.split("?",1)[1]
-            params=dict(x.split("=",1) for x in qs.split("&") if "=" in x)
-            token=params.get("token")
+        token=self._extract_token()
         if token!=_load_token():
             self._respond(403,"text/plain","Forbidden. Need valid token."); return
         parts=p.split("?")[0].split("/")
@@ -42,6 +51,32 @@ class SubHandler(BaseHTTPRequestHandler):
             self._respond(200,"application/json",json.dumps(d,indent=2))
         elif action=="clash": self._respond(200,"text/yaml","\n".join(["proxies:"]+["  - name: "+l for l,_ in links]))
         else: self._respond(404,"text/plain","Unknown: "+action)
+    def do_POST(self):
+        p=self.path.strip("/")
+        if not p.startswith("api/"):
+            self._respond(404,"text/plain","Not found"); return
+        token=self._extract_token()
+        content_length=int(self.headers.get('Content-Length',0))
+        body=self.rfile.read(content_length).decode('utf-8') if content_length>0 else ''
+        from .web import handle_post_api
+        api_path=p[4:]
+        code,ct,response=handle_post_api(api_path,token,body)
+        self._respond(code,ct,response)
+    def do_DELETE(self):
+        p=self.path.strip("/")
+        if not p.startswith("api/"):
+            self._respond(404,"text/plain","Not found"); return
+        token=self._extract_token()
+        from .web import handle_api_request
+        api_path=p[4:]
+        code,ct,body=handle_api_request(api_path,token)
+        self._respond(code,ct,body)
+    def _extract_token(self):
+        if "?" in self.path:
+            qs=self.path.split("?",1)[1]
+            params=dict(x.split("=",1) for x in qs.split("&") if "=" in x)
+            return params.get("token")
+        return None
     def _respond(self,code,ct,body):
         self.send_response(code); self.send_header("Content-Type",ct+"; charset=utf-8")
         d=body.encode("utf-8"); self.send_header("Content-Length",str(len(d)))
