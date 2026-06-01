@@ -19,8 +19,11 @@ class SubHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         p=self.path.strip("/")
         if p=="" or p=="health": self._respond(200,"text/plain","OK"); return
-        # 管理面板页面
+        # 管理面板页面 - 需要 token 认证
         if p.startswith("admin"):
+            token=self._extract_token()
+            if token!=_load_token():
+                self._respond(403,"text/plain","Forbidden. Need valid token."); return
             from .web import get_admin_page
             self._respond(200,"text/html",get_admin_page())
             return
@@ -28,7 +31,7 @@ class SubHandler(BaseHTTPRequestHandler):
         if p.startswith("api/"):
             from .web import handle_api_request
             token=self._extract_token()
-            api_path=p[4:]
+            api_path=p[4:].split("?")[0]  # 去掉查询字符串
             code,ct,body=handle_api_request(api_path,token)
             self._respond(code,ct,body)
             return
